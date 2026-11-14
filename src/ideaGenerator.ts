@@ -1,130 +1,59 @@
-import dotenv from "dotenv";
-import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
-import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
-
-dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const ai = new GoogleGenAI({
-  apiKey:
-    process.env.GEMINI_API_KEY ||
-    process.env.GOOGLE_API_KEY ||
-    process.env.GOOGLE_GENAI_API_KEY ||
-    process.env.VITE_GEMINI_API_KEY ||
-    "",
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
-  },
-});
-
-interface WinningFormula {
+export interface PlatformWinningFormula {
   buyerMindset: string;
   topSellerSecrets: string;
   highConvertingAngle: string;
 }
 
-interface ProductIdea {
+export interface ProductIdea {
   id: string;
   productConcept: string;
   productFormat: string;
   bestPlatform: string;
   platformDemandInsight: string;
-  winningFormula: WinningFormula;
+  winningFormula: PlatformWinningFormula;
   targetCustomer: string;
   problemSolved: string;
   opportunityScore: number;
   validationChecklist: string[];
 }
 
-function getPlatformWinningFormulaPrompt(targetPlatform: string, preferredProductType: string): string {
-  const platform = targetPlatform.trim();
-  const productType = preferredProductType.trim();
-  const isSpecificPlatform = platform && platform !== "Auto-Match Best Platform";
-
-  let directive = "";
-
-  if (isSpecificPlatform) {
-    directive = `STRICT TARGET PLATFORM REQUIREMENT:
-The user explicitly selected "${platform}".
-- EVERY generated idea MUST be designed specifically for "${platform}".
-- The "bestPlatform" field for every idea MUST be strictly "${platform}".
-- All ideas MUST strictly reflect ${platform}'s proven top-selling formats:`;
-
-    if (platform === "Etsy") {
-      directive += `
-  * Etsy Winning Formats: Aesthetic & customizable Canva templates, printable planners, budget/finance Google Sheets & Excel trackers, wedding/event invites, and wall art.
-  * Focus on high aesthetic visual appeal, instant downloadable convenience, and ready-to-use Canva/Sheets copy links.`;
-    } else if (platform === "Gumroad") {
-      directive += `
-  * Gumroad Winning Formats: Practical Notion templates/dashboards, indie developer resources, prompt packs, coding/design assets, and tactical mini-guides/eBooks.
-  * Focus on deep operational utility, developer/creator workflows, and 'Pay What You Want' lead magnet structures.`;
-    } else if (platform === "Whop") {
-      directive += `
-  * Whop Winning Formats: Paid Discord/Telegram communities, trading/crypto/agency tools, SaaS access, fitness/lifestyle challenges, and exclusive membership hubs.
-  * Focus on recurring membership access, peer accountability, live community engagement, and digital vaults.`;
-    } else if (platform === "Stan Store") {
-      directive += `
-  * Stan Store Winning Formats: Creator-led mini-courses, 1:1 coaching/audit bookings, quick "link-in-bio" PDF playbooks, and social media growth kits.
-  * Focus on frictionless mobile checkout (<30 seconds), short-form video audience conversion, and immediate micro-wins ($7–$19).`;
-    } else if (platform === "Payhip") {
-      directive += `
-  * Payhip Winning Formats: Educational courses, membership subscriptions, digital downloads for independent educators, and niche hobby patterns/guides.
-  * Focus on independent educators, craft/hobby makers, transparent pricing with direct file delivery, and coupon bundles.`;
-    }
-  } else {
-    directive = `PLATFORM DIRECTIVE — AUTO-MATCH TO HIGHEST CONVERTING PLATFORM:
-- The user selected "Auto-Match Best Platform".
-- Evaluate the creator's skills, interests, and audience to match EACH generated idea with the platform where that format has the HIGHEST real-world transaction volume and buyer search intent:
-  1. Etsy: Aesthetic & customizable Canva templates, printable planners, budget/finance Google Sheets & Excel trackers, wedding/event invites, and wall art.
-  2. Gumroad: Practical Notion templates/dashboards, indie developer resources, prompt packs, coding/design assets, and tactical mini-guides/eBooks.
-  3. Whop: Paid Discord/Telegram communities, trading/crypto/agency tools, SaaS access, fitness/lifestyle challenges, and exclusive membership hubs.
-  4. Stan Store: Creator-led mini-courses, 1:1 coaching/audit bookings, quick "link-in-bio" PDF playbooks, and social media growth kits.
-  5. Payhip: Educational courses, membership subscriptions, digital downloads for independent educators, and niche hobby patterns/guides.
-- Assign the winning platform in "bestPlatform" (e.g., "Etsy", "Gumroad", "Whop", "Stan Store", or "Payhip").`;
-  }
-
-  if (productType && !productType.startsWith("Any Digital Product Type")) {
-    directive += `\n\nUSER PREFERRED PRODUCT FORMAT:
-- The user also selected a preference for: "${productType}".
-- Align the generated product formats with this preference while strictly maintaining the winning niche requirements for the assigned platform.`;
-  }
-
-  return directive;
+export interface GenerateIdeasParams {
+  skills: string;
+  interests: string;
+  targetAudience: string;
+  targetPlatform: string;
+  preferredProductType?: string;
+  budget?: string;
 }
 
-function generateDynamicFallbackIdeas(
-  skills: string,
-  interests: string,
-  targetAudience: string,
-  targetPlatform: string,
-  preferredProductType: string
-): ProductIdea[] {
-  const chosen = targetPlatform.trim();
+export function generateClientIdeas({
+  skills,
+  interests,
+  targetAudience,
+  targetPlatform,
+  preferredProductType = "Any Digital Product Type (AI Chooses Best Fit)",
+  budget = "$0 (Zero Budget / Organic Tools Only)",
+}: GenerateIdeasParams): ProductIdea[] {
+  const chosen = (targetPlatform || "").trim();
   const s = skills.trim() || "Creative design and planning";
   const i = interests.trim() || "Organization and productivity";
   const a = targetAudience.trim() || "Busy beginners and creators";
 
+  // Etsy winning niches
   if (chosen === "Etsy") {
     return [
       {
-        id: "idea-etsy-1",
-        productConcept: `Aesthetic ${i} & Budget Tracker — A pastel-themed, automated Google Sheets finance and planning tool designed for instant copy.`,
+        id: `etsy-${Date.now()}-1`,
+        productConcept: `Aesthetic ${i} & Budget Command Center — A pastel-themed, automated Google Sheets finance and planning tracker designed for instant copy.`,
         productFormat: "Budget & Finance Google Sheets & Excel Tracker",
         bestPlatform: "Etsy",
         platformDemandInsight:
-          "Etsy shoppers search heavily for ready-to-use, aesthetic spreadsheet trackers and calculators that turn stressful budgeting into a visually satisfying habit.",
+          "Etsy shoppers search heavily for ready-to-use, aesthetic spreadsheet trackers and calculators that turn stressful budgeting into a visually satisfying daily routine.",
         winningFormula: {
           buyerMindset:
             "Etsy buyers prioritize high aesthetic appeal, instant gratification, and clean presentation. They want a file that works straight out of the box with zero complex formulas to configure.",
           topSellerSecrets:
-            "Top Etsy sellers use cohesive pastel color palettes, clickable instant Google Sheets copy links in a 1-page PDF download, and a 3-minute video walkthrough embedded via QR/link.",
+            "Top Etsy sellers use cohesive pastel color palettes, clickable instant Google Sheets copy links in a 1-page PDF download, and a 3-minute video walkthrough embedded via link.",
           highConvertingAngle:
             "Bundle a matching sinking funds visualizer and paycheck allocator tab with automated progress badges to easily beat plain generic spreadsheets.",
         },
@@ -139,8 +68,8 @@ function generateDynamicFallbackIdeas(
         ],
       },
       {
-        id: "idea-etsy-2",
-        productConcept: `Complete ${i} Canva Template & Client Experience Kit — 45+ customizable, modern Canva templates for quick branding and daily organization.`,
+        id: `etsy-${Date.now()}-2`,
+        productConcept: `Complete ${i} Canva Brand & Social Template Kit — 45+ customizable, modern Canva templates for quick branding, daily planning, and client experience.`,
         productFormat: "Aesthetic & Customizable Canva Templates",
         bestPlatform: "Etsy",
         platformDemandInsight:
@@ -164,8 +93,8 @@ function generateDynamicFallbackIdeas(
         ],
       },
       {
-        id: "idea-etsy-3",
-        productConcept: `Printable & Digital ${i} Master Planner — A minimalist printable binder and Goodnotes-compatible digital planner with hyperlinked navigation tabs.`,
+        id: `etsy-${Date.now()}-3`,
+        productConcept: `Printable & Digital ${i} Master Routine Planner — A minimalist printable binder and Goodnotes-compatible digital planner with hyperlinked navigation tabs.`,
         productFormat: "Printable Planners & Digital Journals",
         bestPlatform: "Etsy",
         platformDemandInsight:
@@ -191,10 +120,11 @@ function generateDynamicFallbackIdeas(
     ];
   }
 
+  // Gumroad winning niches
   if (chosen === "Gumroad") {
     return [
       {
-        id: "idea-gumroad-1",
+        id: `gumroad-${Date.now()}-1`,
         productConcept: `The Ultimate ${i} Operating System for Notion — A modular workspace featuring connected databases, automated tracking, and weekly review dashboards.`,
         productFormat: "Practical Notion Dashboard & System",
         bestPlatform: "Gumroad",
@@ -215,11 +145,11 @@ function generateDynamicFallbackIdeas(
         validationChecklist: [
           "Check the Notion category on Gumroad to compare feature sets and pricing tiers across bestselling operating systems.",
           "Publish a free 'Pay What You Want' starter edition on Gumroad to build an email list of initial users.",
-          "Record a 60-second Loom or X/Twitter walkthrough showing how the database formulas automate manual entry.",
+          "Record a 60-second video walkthrough showing how the database formulas automate manual entry and post to Twitter/X.",
         ],
       },
       {
-        id: "idea-gumroad-2",
+        id: `gumroad-${Date.now()}-2`,
         productConcept: `Tactical ${i} Playbook & Workflow Cheatsheets — An actionable, zero-fluff markdown & PDF documentation kit packed with tested SOPs and frameworks.`,
         productFormat: "Tactical Mini-Guide & Digital Playbook",
         bestPlatform: "Gumroad",
@@ -238,14 +168,14 @@ function generateDynamicFallbackIdeas(
           "Cuts down months of trial-and-error into a concise, 45-minute step-by-step implementation guide.",
         opportunityScore: 87,
         validationChecklist: [
-          "Identify the top 3 recurring pain points discussed in niche subreddits and developer communities related to your topic.",
-          "Draft the 5-step core framework and share it as an educational thread on X (Twitter) or LinkedIn.",
+          "Identify recurring pain points discussed in niche subreddits and developer communities related to your topic.",
+          "Draft the 5-step core framework and share it as an educational thread on Twitter/X or LinkedIn.",
           "Pre-sell 10 copies at an early-bird price ($9) to validate buying demand before finalizing all chapters.",
         ],
       },
       {
-        id: "idea-gumroad-3",
-        productConcept: `Indie ${i} Prompt & Resource Power-Pack — 150+ rigorously tested prompts and workflow automations to 10x output.`,
+        id: `gumroad-${Date.now()}-3`,
+        productConcept: `Indie ${i} Prompt & Resource Power-Pack — 150+ rigorously tested prompts and workflow automations leveraging ${s} to 10x output.`,
         productFormat: "Prompt Packs & Indie Developer Resources",
         bestPlatform: "Gumroad",
         platformDemandInsight:
@@ -271,11 +201,12 @@ function generateDynamicFallbackIdeas(
     ];
   }
 
+  // Whop winning niches
   if (chosen === "Whop") {
     return [
       {
-        id: "idea-whop-1",
-        productConcept: `The ${i} Mastermind & Accountability Collective — A private Discord membership featuring weekly live sprints, hot-seat coaching, and an exclusive resource vault.`,
+        id: `whop-${Date.now()}-1`,
+        productConcept: `The ${i} Mastermind & Accountability Collective — A private Discord membership featuring weekly live sprints, hot-seat reviews, and an exclusive resource vault.`,
         productFormat: "Paid Discord/Telegram Community & Membership Hub",
         bestPlatform: "Whop",
         platformDemandInsight:
@@ -299,7 +230,7 @@ function generateDynamicFallbackIdeas(
         ],
       },
       {
-        id: "idea-whop-2",
+        id: `whop-${Date.now()}-2`,
         productConcept: `30-Day ${i} Challenge & Resource Vault — A cohort-style recurring challenge hub with daily milestone worksheets, video check-ins, and peer discussion boards.`,
         productFormat: "Fitness/Lifestyle Challenge & Exclusive Vault",
         bestPlatform: "Whop",
@@ -324,8 +255,8 @@ function generateDynamicFallbackIdeas(
         ],
       },
       {
-        id: "idea-whop-3",
-        productConcept: `Agency & Creator ${i} Automation Hub — A curated SaaS/tool suite with private scripts, Airtable/Make automations, and weekly tool office hours.`,
+        id: `whop-${Date.now()}-3`,
+        productConcept: `Creator ${i} Automation & Script Locker — A curated SaaS/tool suite with private scripts, Airtable/Make automations, and weekly office hours.`,
         productFormat: "Trading/Agency Tools & SaaS Access Hub",
         bestPlatform: "Whop",
         platformDemandInsight:
@@ -351,10 +282,11 @@ function generateDynamicFallbackIdeas(
     ];
   }
 
+  // Stan Store winning niches
   if (chosen === "Stan Store") {
     return [
       {
-        id: "idea-stan-1",
+        id: `stan-${Date.now()}-1`,
         productConcept: `15-Minute ${i} Action Playbook — A hyper-concise, mobile-optimized PDF guide and routine checklist built for 1-click checkout directly in your link-in-bio.`,
         productFormat: "Quick 'Link-in-Bio' PDF Playbook & Checklist",
         bestPlatform: "Stan Store",
@@ -373,13 +305,13 @@ function generateDynamicFallbackIdeas(
           "Provides a frictionless, instant solution to a single frustrating problem without having to navigate complicated websites or course portals.",
         opportunityScore: 90,
         validationChecklist: [
-          "Analyze 5 creators in your space using Stan Store to examine their hero product titles, video hooks, and checkout flows.",
+          "Analyze creators in your space using Stan Store to examine their hero product titles, video hooks, and checkout flows.",
           "Record 3 TikToks/Reels highlighting the exact frustration your playbook solves, directing viewers to your bio link.",
           "Offer the playbook for $7 during your launch week to capitalize on mobile impulse buying behavior.",
         ],
       },
       {
-        id: "idea-stan-2",
+        id: `stan-${Date.now()}-2`,
         productConcept: `Rapid ${i} Video Mini-Course — A self-paced 45-minute video masterclass broken into 3-minute mobile-friendly lessons with accompanying cheat sheets.`,
         productFormat: "Creator-Led Mini-Courses & Video Modules",
         bestPlatform: "Stan Store",
@@ -404,7 +336,7 @@ function generateDynamicFallbackIdeas(
         ],
       },
       {
-        id: "idea-stan-3",
+        id: `stan-${Date.now()}-3`,
         productConcept: `1:1 ${i} VIP Audit & Strategy Session — An exclusive 30-minute personalized consultation with automated calendar booking and post-call action summary.`,
         productFormat: "1:1 Coaching & Audit Bookings",
         bestPlatform: "Stan Store",
@@ -416,7 +348,7 @@ function generateDynamicFallbackIdeas(
           topSellerSecrets:
             "Require an intake questionnaire upon booking, limit availability to 5 spots per week to create genuine scarcity, and send a recorded video recap within 24 hours.",
           highConvertingAngle:
-            "Guarantee a customized 1-page action plan and 7 days of follow-up voice-note access via Voxer or Telegram.",
+            "Guarantee a customized 1-page action plan and 7 days of follow-up voice-note access via messaging.",
         },
         targetCustomer: a,
         problemSolved:
@@ -425,16 +357,17 @@ function generateDynamicFallbackIdeas(
         validationChecklist: [
           "Configure your calendar availability in Stan Store for just 3 pilot slots this week.",
           "Post a short-form video sharing a case study or breakdown, offering the 3 spots to anyone who comments a keyword.",
-          "Conduct the first session at an introductory rate of $49 to collect a glowing video testimonial.",
+          "Conduct the first session at an introductory rate of $49 to collect a glowing testimonial.",
         ],
       },
     ];
   }
 
+  // Payhip winning niches
   if (chosen === "Payhip") {
     return [
       {
-        id: "idea-payhip-1",
+        id: `payhip-${Date.now()}-1`,
         productConcept: `Complete ${i} Master Curriculum — A comprehensive, self-paced video course with high-definition video modules, downloadable exercise workbooks, and lifetime updates.`,
         productFormat: "Educational Courses & Independent Educator Hub",
         bestPlatform: "Payhip",
@@ -459,8 +392,8 @@ function generateDynamicFallbackIdeas(
         ],
       },
       {
-        id: "idea-payhip-2",
-        productConcept: `Niche ${i} Pattern & Craft Illustrated Guide — Step-by-step illustrated PDF patterns with printable cutting templates, video stitch guides, and material checklists.`,
+        id: `payhip-${Date.now()}-2`,
+        productConcept: `Niche ${i} Pattern & Craft Illustrated Guide — Step-by-step illustrated PDF patterns with printable cutting templates, video guides, and material checklists.`,
         productFormat: "Niche Hobby Patterns & Illustrated Guides",
         bestPlatform: "Payhip",
         platformDemandInsight:
@@ -484,7 +417,7 @@ function generateDynamicFallbackIdeas(
         ],
       },
       {
-        id: "idea-payhip-3",
+        id: `payhip-${Date.now()}-3`,
         productConcept: `Independent Educator ${i} Resource Vault — A monthly subscription giving members fresh teaching materials, lesson plans, and classroom activity sheets every month.`,
         productFormat: "Membership Subscriptions & Digital Downloads",
         bestPlatform: "Payhip",
@@ -496,7 +429,7 @@ function generateDynamicFallbackIdeas(
           topSellerSecrets:
             "Offer a low-cost monthly recurring plan ($9–$15/mo) with an annual discount (2 months free) and archive access to all past resource drops.",
           highConvertingAngle:
-            "Include editable Canva source files alongside ready-to-print PDFs so instructors can customize materials with their own school or studio branding.",
+            "Include editable Canva source files alongside ready-to-print PDFs so instructors can customize materials with their own branding.",
         },
         targetCustomer: a,
         problemSolved:
@@ -511,10 +444,10 @@ function generateDynamicFallbackIdeas(
     ];
   }
 
-  // Fallback for "Auto-Match Best Platform"
+  // Auto-Match across highest-converting marketplaces
   return [
     {
-      id: "idea-auto-1",
+      id: `auto-${Date.now()}-1`,
       productConcept: `Aesthetic ${i} & Budget Command Center — A pastel Google Sheets tool that auto-calculates sinking funds, bills, and monthly cash flow.`,
       productFormat: "Budget & Finance Google Sheets & Excel Tracker",
       bestPlatform: "Etsy",
@@ -539,7 +472,7 @@ function generateDynamicFallbackIdeas(
       ],
     },
     {
-      id: "idea-auto-2",
+      id: `auto-${Date.now()}-2`,
       productConcept: `The ${i} Operating System for Freelancers — A comprehensive, modular Notion workspace with client pipelines, invoice generators, and project boards.`,
       productFormat: "Practical Notion Dashboard & Resource Kit",
       bestPlatform: "Gumroad",
@@ -564,7 +497,7 @@ function generateDynamicFallbackIdeas(
       ],
     },
     {
-      id: "idea-auto-3",
+      id: `auto-${Date.now()}-3`,
       productConcept: `The ${i} Accountability Sprint & Member Hub — An active community with weekly live goal-setting sprints, resource lockers, and peer check-ins.`,
       productFormat: "Paid Discord/Telegram Community & Membership Hub",
       bestPlatform: "Whop",
@@ -589,7 +522,7 @@ function generateDynamicFallbackIdeas(
       ],
     },
     {
-      id: "idea-auto-4",
+      id: `auto-${Date.now()}-4`,
       productConcept: `5-Minute ${i} Reset Routine & Action Playbook — A mobile-first interactive PDF guide and Canva routine pack designed for instant 1-tap download from bio links.`,
       productFormat: "Quick 'Link-in-Bio' PDF Playbook & Canva Kit",
       bestPlatform: "Stan Store",
@@ -608,259 +541,10 @@ function generateDynamicFallbackIdeas(
         "Eliminates weekend overwhelm and Monday stress with a simple 15-minute guided step-by-step reset routine.",
       opportunityScore: 85,
       validationChecklist: [
-        "Review 5 creators in your niche using Stan Store to examine their hero product price points.",
+        "Review creators in your niche using Stan Store to examine their hero product price points.",
         "Film a 15-second TikTok/Reel demonstrating your personal 15-minute reset routine with a bio link call-to-action.",
         "List the playbook at $9 to test initial conversion on mobile viewers.",
       ],
     },
   ];
 }
-
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
-
-  app.use(express.json({ limit: "1mb" }));
-
-  app.post("/api/generate-ideas", async (req, res) => {
-    try {
-      const {
-        skills = "",
-        interests = "",
-        targetAudience = "",
-        targetPlatform = "Auto-Match Best Platform",
-        preferredProductType = "Any Digital Product Type (AI Chooses Best Fit)",
-        budget = "$0 (Zero Budget / Organic Tools Only)",
-      } = req.body || {};
-
-      if (!skills.trim() || !interests.trim() || !targetAudience.trim()) {
-        return res.status(400).json({
-          error:
-            "Please fill in your Skills, Interests, and Target Audience to generate ideas.",
-        });
-      }
-
-      const apiKey =
-        process.env.GEMINI_API_KEY ||
-        process.env.GOOGLE_API_KEY ||
-        process.env.GOOGLE_GENAI_API_KEY ||
-        process.env.VITE_GEMINI_API_KEY ||
-        "";
-      const isMissingOrPlaceholderKey =
-        !apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.trim() === "";
-
-      if (isMissingOrPlaceholderKey) {
-        console.log(
-          "No GEMINI_API_KEY configured. Generating tailored platform-mapped ideas via high-converting generator."
-        );
-        const fallbackIdeas = generateDynamicFallbackIdeas(
-          skills,
-          interests,
-          targetAudience,
-          targetPlatform,
-          preferredProductType
-        );
-        return res.json({ ideas: fallbackIdeas });
-      }
-
-      const platformDirective = getPlatformWinningFormulaPrompt(
-        targetPlatform,
-        preferredProductType
-      );
-
-      const prompt = `Analyze the creator profile and generate 3 to 4 tailored, high-converting digital product ideas strictly mapped to what actually sells best on each platform:
-
-Creator Profile:
-- Skills: ${skills.trim()}
-- Interests: ${interests.trim()}
-- Target Audience: ${targetAudience.trim()}
-- Target Platform: ${targetPlatform.trim()}
-- Preferred Product Type: ${preferredProductType.trim()}
-- Budget: ${budget.trim() || "$0 (Zero Budget / Organic Tools Only)"}
-
-${platformDirective}
-
-MANDATORY PLATFORM-SPECIFIC WINNING NICHES:
-- Etsy: Aesthetic & customizable Canva templates, printable planners, budget/finance Google Sheets & Excel trackers, wedding/event invites, and wall art.
-- Gumroad: Practical Notion templates/dashboards, indie developer resources, prompt packs, coding/design assets, and tactical mini-guides/eBooks.
-- Whop: Paid Discord/Telegram communities, trading/crypto/agency tools, SaaS access, fitness/lifestyle challenges, and exclusive membership hubs.
-- Stan Store: Creator-led mini-courses, 1:1 coaching/audit bookings, quick "link-in-bio" PDF playbooks, and social media growth kits.
-- Payhip: Educational courses, membership subscriptions, digital downloads for independent educators, and niche hobby patterns/guides.
-
-FOR EACH IDEA, YOU MUST PROVIDE A DEDICATED "winningFormula" OBJECT:
-- buyerMindset: The exact purchasing psychology and expectations of shoppers on that platform.
-- topSellerSecrets: What top sellers on that platform include to get high sales (e.g., "Etsy buyers love clean aesthetic previews and instant Canva links" or "Gumroad buyers prefer 'Pay What You Want' lead magnets paired with a $19 Pro version").
-- highConvertingAngle: A specific hook, unique bundle, or standout differentiator to beat the competition.`;
-
-      try {
-        const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: prompt,
-          config: {
-            systemInstruction:
-              "You are an elite digital product strategist and marketplace monetization expert. You strictly map user skills and interests to the proven top-selling formats for each specific platform: Etsy (Canva templates, printable planners, Sheets trackers), Gumroad (Notion systems, developer/design assets, prompt packs, playbooks), Whop (Paid Discord/Telegram communities, challenge vaults, software tools), Stan Store (creator-led mini courses, 1:1 audits, link-in-bio PDF playbooks), and Payhip (educational courses, independent educator bundles, hobby patterns). For every idea, diagnose the platform's exact buyer mindset, what top sellers include, and a high-converting differentiation angle.",
-            temperature: 0.7,
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                ideas: {
-                  type: Type.ARRAY,
-                  description:
-                    "Between 3 and 4 digital product ideas strictly mapped to platform winning niches.",
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      id: {
-                        type: Type.STRING,
-                        description: "Unique short ID like idea-1, idea-2",
-                      },
-                      productConcept: {
-                        type: Type.STRING,
-                        description:
-                          "Clear, catchy product title and a simple 1-2 sentence explanation of what it is.",
-                      },
-                      productFormat: {
-                        type: Type.STRING,
-                        description:
-                          "The concrete digital product format matching the platform's winning niche (e.g., Canva Template Kit, Notion Dashboard, Google Sheets Tracker, Paid Discord Hub & Challenge, Quick PDF Playbook).",
-                      },
-                      bestPlatform: {
-                        type: Type.STRING,
-                        description:
-                          "The exact matched marketplace (Etsy, Gumroad, Whop, Stan Store, or Payhip).",
-                      },
-                      platformDemandInsight: {
-                        type: Type.STRING,
-                        description:
-                          "1-2 sentences explaining WHY this format has proven high sales volume on this platform.",
-                      },
-                      winningFormula: {
-                        type: Type.OBJECT,
-                        description:
-                          "Platform winning formula explaining why this sells best on this platform.",
-                        properties: {
-                          buyerMindset: {
-                            type: Type.STRING,
-                            description:
-                              "The exact buyer mindset and psychology on this platform.",
-                          },
-                          topSellerSecrets: {
-                            type: Type.STRING,
-                            description:
-                              "What top sellers on this platform include to get high sales.",
-                          },
-                          highConvertingAngle: {
-                            type: Type.STRING,
-                            description:
-                              "A specific hook, unique bundle, or standout differentiator to beat competition.",
-                          },
-                        },
-                        required: [
-                          "buyerMindset",
-                          "topSellerSecrets",
-                          "highConvertingAngle",
-                        ],
-                      },
-                      targetCustomer: {
-                        type: Type.STRING,
-                        description: "Simple description of who will buy this.",
-                      },
-                      problemSolved: {
-                        type: Type.STRING,
-                        description:
-                          "What everyday frustration or problem this solves for the buyer.",
-                      },
-                      opportunityScore: {
-                        type: Type.INTEGER,
-                        description:
-                          "Preliminary opportunity score out of 100 (1-100).",
-                      },
-                      validationChecklist: {
-                        type: Type.ARRAY,
-                        description:
-                          "3 to 4 actionable, practical validation steps tailored to that product and platform.",
-                        items: {
-                          type: Type.STRING,
-                        },
-                      },
-                    },
-                    required: [
-                      "id",
-                      "productConcept",
-                      "productFormat",
-                      "bestPlatform",
-                      "platformDemandInsight",
-                      "winningFormula",
-                      "targetCustomer",
-                      "problemSolved",
-                      "opportunityScore",
-                      "validationChecklist",
-                    ],
-                  },
-                },
-              },
-              required: ["ideas"],
-            },
-          },
-        });
-
-        const rawText = response.text;
-        if (!rawText) {
-          const fallback = generateDynamicFallbackIdeas(
-            skills,
-            interests,
-            targetAudience,
-            targetPlatform,
-            preferredProductType
-          );
-          return res.json({ ideas: fallback });
-        }
-
-        const parsed = JSON.parse(rawText.trim());
-        const ideas = Array.isArray(parsed.ideas) ? parsed.ideas.slice(0, 5) : [];
-        return res.json({ ideas });
-      } catch (geminiError) {
-        console.warn(
-          "Gemini API call failed, providing high-converting dynamic fallback ideas:",
-          geminiError
-        );
-        const fallback = generateDynamicFallbackIdeas(
-          skills,
-          interests,
-          targetAudience,
-          targetPlatform,
-          preferredProductType
-        );
-        return res.json({ ideas: fallback });
-      }
-    } catch (error) {
-      console.error("Error generating digital product ideas:", error);
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to generate digital product ideas. Please try again.";
-      return res.status(500).json({ error: message });
-    }
-  });
-
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(__dirname, "dist");
-    app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
-}
-
-startServer();

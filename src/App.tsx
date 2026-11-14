@@ -23,6 +23,7 @@ import {
   ChevronRight,
   ShieldCheck,
 } from "lucide-react";
+import { generateClientIdeas } from "./ideaGenerator";
 
 export interface PlatformWinningFormula {
   buyerMindset: string;
@@ -360,27 +361,20 @@ ${idea.validationChecklist.map((step, i) => `${i + 1}. ${step}`).join("\n")}`;
     setError(null);
 
     try {
-      const response = await fetch("/api/generate-ideas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          skills,
-          interests,
-          targetAudience,
-          targetPlatform,
-          preferredProductType,
-          budget,
-        }),
+      // Simulate realistic 500ms matching delay for the smooth SaaS skeleton loader
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const generated = generateClientIdeas({
+        skills,
+        interests,
+        targetAudience,
+        targetPlatform,
+        preferredProductType,
+        budget,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Could not generate ideas. Please try again.");
-      }
-
-      if (Array.isArray(data.ideas) && data.ideas.length > 0) {
-        setIdeas(data.ideas);
+      if (Array.isArray(generated) && generated.length > 0) {
+        setIdeas(generated);
         setCheckedSteps({});
       } else {
         throw new Error("No ideas were returned. Please try adjusting your inputs.");
