@@ -1,0 +1,6 @@
+{
+  "name": "Digital Product Idea Finder AI",
+  "description": "Analyze your skills, interests, audience, and budget to generate and validate 3 to 5 tailored digital product ideas with opportunity scores and validation checklists.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
