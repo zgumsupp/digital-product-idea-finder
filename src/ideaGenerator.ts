@@ -1,3 +1,5 @@
+import { GoogleGenAI, Type } from "@google/genai";
+
 export interface PlatformWinningFormula {
   buyerMindset: string;
   topSellerSecrets: string;
@@ -26,20 +28,126 @@ export interface GenerateIdeasParams {
   budget?: string;
 }
 
-export function generateClientIdeas({
+export interface GenerateIdeasResult {
+  ideas: ProductIdea[];
+  isLiveAi: boolean;
+  notice?: string;
+}
+
+/**
+ * Robust JSON parser that strips markdown fences (```json, ```)
+ * and safely isolates the JSON object or array to prevent Unexpected token errors.
+ */
+export function parseCleanJson<T>(rawText: string): T {
+  if (!rawText || typeof rawText !== "string") {
+    throw new Error("Empty response received from AI model.");
+  }
+
+  let cleaned = rawText.trim();
+
+  // Strip leading and trailing markdown backticks if any
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, "");
+    cleaned = cleaned.replace(/\n?```\s*$/i, "");
+    cleaned = cleaned.trim();
+  }
+
+  // Find the exact outermost JSON boundary
+  const firstBrace = cleaned.indexOf("{");
+  const firstBracket = cleaned.indexOf("[");
+
+  let startIdx = 0;
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+    startIdx = firstBrace;
+    const lastBrace = cleaned.lastIndexOf("}");
+    if (lastBrace !== -1 && lastBrace >= startIdx) {
+      cleaned = cleaned.substring(startIdx, lastBrace + 1);
+    }
+  } else if (firstBracket !== -1) {
+    startIdx = firstBracket;
+    const lastBracket = cleaned.lastIndexOf("]");
+    if (lastBracket !== -1 && lastBracket >= startIdx) {
+      cleaned = cleaned.substring(startIdx, lastBracket + 1);
+    }
+  }
+
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch (err) {
+    console.error("JSON parse error on cleaned string:", cleaned, err);
+    throw new Error(
+      `Could not parse response into valid JSON: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+}
+
+function getPlatformDirective(targetPlatform: string, preferredProductType: string): string {
+  const platform = (targetPlatform || "").trim();
+  const productType = (preferredProductType || "").trim();
+  const isSpecificPlatform = platform && platform !== "Auto-Match Best Platform";
+
+  let directive = "";
+
+  if (isSpecificPlatform) {
+    directive = `STRICT TARGET PLATFORM REQUIREMENT:
+The user explicitly selected "${platform}".
+- EVERY generated idea MUST be designed specifically for "${platform}".
+- The "bestPlatform" field for every idea MUST be strictly "${platform}".
+- All ideas MUST strictly reflect ${platform}'s proven top-selling formats:`;
+
+    if (platform === "Etsy") {
+      directive += `
+  * Etsy Winning Formats: Aesthetic & customizable Canva templates, printable planners, budget/finance Google Sheets & Excel trackers, wedding/event invites, and wall art.
+  * Focus on high visual appeal, instant downloadable convenience, and ready-to-use Canva/Sheets copy links.`;
+    } else if (platform === "Gumroad") {
+      directive += `
+  * Gumroad Winning Formats: Practical Notion templates/dashboards, indie developer resources, prompt packs, coding/design assets, and tactical mini-guides/eBooks.
+  * Focus on deep operational utility, developer/creator workflows, and 'Pay What You Want' lead magnet structures.`;
+    } else if (platform === "Whop") {
+      directive += `
+  * Whop Winning Formats: Paid Discord/Telegram communities, trading/crypto/agency tools, SaaS access, fitness/lifestyle challenges, and exclusive membership hubs.
+  * Focus on recurring membership access, peer accountability, live community engagement, and digital vaults.`;
+    } else if (platform === "Stan Store") {
+      directive += `
+  * Stan Store Winning Formats: Creator-led mini-courses, 1:1 coaching/audit bookings, quick "link-in-bio" PDF playbooks, and social media growth kits.
+  * Focus on frictionless mobile checkout (<30 seconds), short-form video audience conversion, and immediate micro-wins ($7–$19).`;
+    } else if (platform === "Payhip") {
+      directive += `
+  * Payhip Winning Formats: Educational courses, membership subscriptions, digital downloads for independent educators, and niche hobby patterns/guides.
+  * Focus on independent educators, craft/hobby makers, transparent pricing with direct file delivery, and coupon bundles.`;
+    }
+  } else {
+    directive = `PLATFORM DIRECTIVE — AUTO-MATCH TO HIGHEST CONVERTING PLATFORM:
+- The user selected "Auto-Match Best Platform".
+- Evaluate the creator's skills, interests, and audience to match EACH generated idea with the platform where that format has the HIGHEST real-world transaction volume and buyer search intent:
+  1. Etsy: Aesthetic & customizable Canva templates, printable planners, budget/finance Google Sheets & Excel trackers, wedding/event invites, and wall art.
+  2. Gumroad: Practical Notion templates/dashboards, indie developer resources, prompt packs, coding/design assets, and tactical mini-guides/eBooks.
+  3. Whop: Paid Discord/Telegram communities, trading/crypto/agency tools, SaaS access, fitness/lifestyle challenges, and exclusive membership hubs.
+  4. Stan Store: Creator-led mini-courses, 1:1 coaching/audit bookings, quick "link-in-bio" PDF playbooks, and social media growth kits.
+  5. Payhip: Educational courses, membership subscriptions, digital downloads for independent educators, and niche hobby patterns/guides.
+- Assign the winning platform in "bestPlatform" (e.g., "Etsy", "Gumroad", "Whop", "Stan Store", or "Payhip").`;
+  }
+
+  if (productType && !productType.startsWith("Any Digital Product Type")) {
+    directive += `\n\nUSER PREFERRED PRODUCT FORMAT:
+- The user also selected a preference for: "${productType}".
+- Align the generated product formats with this preference while strictly maintaining the winning niche requirements for the assigned platform.`;
+  }
+
+  return directive;
+}
+
+export function generateFallbackIdeas({
   skills,
   interests,
   targetAudience,
   targetPlatform,
-  preferredProductType = "Any Digital Product Type (AI Chooses Best Fit)",
-  budget = "$0 (Zero Budget / Organic Tools Only)",
 }: GenerateIdeasParams): ProductIdea[] {
   const chosen = (targetPlatform || "").trim();
   const s = skills.trim() || "Creative design and planning";
   const i = interests.trim() || "Organization and productivity";
   const a = targetAudience.trim() || "Busy beginners and creators";
 
-  // Etsy winning niches
   if (chosen === "Etsy") {
     return [
       {
@@ -120,7 +228,6 @@ export function generateClientIdeas({
     ];
   }
 
-  // Gumroad winning niches
   if (chosen === "Gumroad") {
     return [
       {
@@ -175,7 +282,7 @@ export function generateClientIdeas({
       },
       {
         id: `gumroad-${Date.now()}-3`,
-        productConcept: `Indie ${i} Prompt & Resource Power-Pack — 150+ rigorously tested prompts and workflow automations leveraging ${s} to 10x output.`,
+        productConcept: `Indie ${i} Prompt & Resource Power-Pack — 150+ rigorously tested prompts and workflow automations to 10x output.`,
         productFormat: "Prompt Packs & Indie Developer Resources",
         bestPlatform: "Gumroad",
         platformDemandInsight:
@@ -201,7 +308,6 @@ export function generateClientIdeas({
     ];
   }
 
-  // Whop winning niches
   if (chosen === "Whop") {
     return [
       {
@@ -254,35 +360,9 @@ export function generateClientIdeas({
           "Pre-enroll 10 beta testers before producing the full daily video or worksheet content.",
         ],
       },
-      {
-        id: `whop-${Date.now()}-3`,
-        productConcept: `Creator ${i} Automation & Script Locker — A curated SaaS/tool suite with private scripts, Airtable/Make automations, and weekly office hours.`,
-        productFormat: "Trading/Agency Tools & SaaS Access Hub",
-        bestPlatform: "Whop",
-        platformDemandInsight:
-          "Whop has massive buyer demand for operational tools, agency resource packs, and software licensing access that save businesses tangible hours.",
-        winningFormula: {
-          buyerMindset:
-            "Agency owners and creators on Whop are ROI-driven. If a tool saves 5 hours a week or drives revenue, they gladly pay recurring monthly fees without hesitation.",
-          topSellerSecrets:
-            "Top tool creators on Whop provide 1-click webhook templates, video troubleshooting libraries, and guaranteed 24-hour Discord technical support.",
-          highConvertingAngle:
-            "Offer a 'Done-With-You' onboarding call for annual subscribers to maximize retention and minimize churn.",
-        },
-        targetCustomer: a,
-        problemSolved:
-          "Removes technical friction by automating tedious workflows that waste hours of manual effort every week.",
-        opportunityScore: 86,
-        validationChecklist: [
-          "Identify 3 repetitive manual tasks freelancers in your target audience spend over 3 hours doing every week.",
-          "Build a working prototype using Google Apps Script, Make.com, or Airtable automations.",
-          "Demo the automation in a 2-minute video to 5 agency owners and ask if they would pay $19/mo for access.",
-        ],
-      },
     ];
   }
 
-  // Stan Store winning niches
   if (chosen === "Stan Store") {
     return [
       {
@@ -310,60 +390,9 @@ export function generateClientIdeas({
           "Offer the playbook for $7 during your launch week to capitalize on mobile impulse buying behavior.",
         ],
       },
-      {
-        id: `stan-${Date.now()}-2`,
-        productConcept: `Rapid ${i} Video Mini-Course — A self-paced 45-minute video masterclass broken into 3-minute mobile-friendly lessons with accompanying cheat sheets.`,
-        productFormat: "Creator-Led Mini-Courses & Video Modules",
-        bestPlatform: "Stan Store",
-        platformDemandInsight:
-          "Stan Store's native video course player lets mobile shoppers watch bite-sized video lessons immediately after purchase right in their mobile browser.",
-        winningFormula: {
-          buyerMindset:
-            "Mobile buyers don't want 20-hour academic courses. They want direct, energetic, actionable instruction from a creator they trust, digestible on their morning commute.",
-          topSellerSecrets:
-            "Keep videos under 5 minutes each, include downloadable audio-only MP3s, and embed clickable resource links directly underneath each lesson.",
-          highConvertingAngle:
-            "Add a 'Quick Start 24-Hour Roadmap' PDF download that guarantees the student can achieve their first concrete milestone today.",
-        },
-        targetCustomer: a,
-        problemSolved:
-          "Removes overwhelm by condensing complex skills into clear, 3-minute actionable video walkthroughs.",
-        opportunityScore: 88,
-        validationChecklist: [
-          "Outline a 5-module curriculum where each module solves one specific step of the overall problem.",
-          "Record Module 1 using your phone camera and natural lighting to confirm clear audio and visual pacing.",
-          "Pre-sell 5 seats at $19 through an Instagram Story or TikTok poll before recording the remaining lessons.",
-        ],
-      },
-      {
-        id: `stan-${Date.now()}-3`,
-        productConcept: `1:1 ${i} VIP Audit & Strategy Session — An exclusive 30-minute personalized consultation with automated calendar booking and post-call action summary.`,
-        productFormat: "1:1 Coaching & Audit Bookings",
-        bestPlatform: "Stan Store",
-        platformDemandInsight:
-          "Stan Store integrates 1-click calendar scheduling directly into the checkout, making it the most seamless way for social creators to monetize coaching and audits.",
-        winningFormula: {
-          buyerMindset:
-            "High-intent followers want tailored, personalized advice for their specific situation rather than generalized digital templates.",
-          topSellerSecrets:
-            "Require an intake questionnaire upon booking, limit availability to 5 spots per week to create genuine scarcity, and send a recorded video recap within 24 hours.",
-          highConvertingAngle:
-            "Guarantee a customized 1-page action plan and 7 days of follow-up voice-note access via messaging.",
-        },
-        targetCustomer: a,
-        problemSolved:
-          "Gives clients laser-focused, custom clarity and an exact tailored roadmap in just 30 minutes.",
-        opportunityScore: 84,
-        validationChecklist: [
-          "Configure your calendar availability in Stan Store for just 3 pilot slots this week.",
-          "Post a short-form video sharing a case study or breakdown, offering the 3 spots to anyone who comments a keyword.",
-          "Conduct the first session at an introductory rate of $49 to collect a glowing testimonial.",
-        ],
-      },
     ];
   }
 
-  // Payhip winning niches
   if (chosen === "Payhip") {
     return [
       {
@@ -391,60 +420,10 @@ export function generateClientIdeas({
           "Launch with an early-bird coupon code offering 35% off to the first 20 students.",
         ],
       },
-      {
-        id: `payhip-${Date.now()}-2`,
-        productConcept: `Niche ${i} Pattern & Craft Illustrated Guide — Step-by-step illustrated PDF patterns with printable cutting templates, video guides, and material checklists.`,
-        productFormat: "Niche Hobby Patterns & Illustrated Guides",
-        bestPlatform: "Payhip",
-        platformDemandInsight:
-          "Payhip has a massive, passionate community of hobbyists, sewists, crafters, and pattern makers who purchase downloadable hobby guides directly from makers.",
-        winningFormula: {
-          buyerMindset:
-            "Hobbyists and crafters value clarity, accurate measurements, clear step-by-step photos, and printable templates they can lay out on their craft table.",
-          topSellerSecrets:
-            "Include high-resolution step photos, a printable supply checklist with exact store recommendations, and a troubleshooting FAQ for common beginner mistakes.",
-          highConvertingAngle:
-            "Provide both US Letter and A4 printable formats plus a digital interactive tablet edition with clickable video reference links.",
-        },
-        targetCustomer: a,
-        problemSolved:
-          "Prevents ruined projects and wasted materials by providing foolproof, tested patterns with exact beginner-friendly guidance.",
-        opportunityScore: 87,
-        validationChecklist: [
-          "Share progress photos of your craft pattern or hobby project in specialized Facebook groups and Instagram craft tags.",
-          "Invite 2 fellow hobbyists to test-run your instructions and verify that measurements are 100% accurate.",
-          "List your completed pattern on Payhip and bundle it with a seasonal variation guide to maximize average order value.",
-        ],
-      },
-      {
-        id: `payhip-${Date.now()}-3`,
-        productConcept: `Independent Educator ${i} Resource Vault — A monthly subscription giving members fresh teaching materials, lesson plans, and classroom activity sheets every month.`,
-        productFormat: "Membership Subscriptions & Digital Downloads",
-        bestPlatform: "Payhip",
-        platformDemandInsight:
-          "Payhip makes recurring membership billing effortless with built-in subscription tiers and automatic member downloads, ideal for independent teachers and niche coaches.",
-        winningFormula: {
-          buyerMindset:
-            "Educators and instructors look for dependable, monthly resource drops that save them 10+ hours of prep time every single week.",
-          topSellerSecrets:
-            "Offer a low-cost monthly recurring plan ($9–$15/mo) with an annual discount (2 months free) and archive access to all past resource drops.",
-          highConvertingAngle:
-            "Include editable Canva source files alongside ready-to-print PDFs so instructors can customize materials with their own branding.",
-        },
-        targetCustomer: a,
-        problemSolved:
-          "Saves busy instructors from late-night lesson prep stress by delivering fresh, classroom-tested curriculum packs on the 1st of every month.",
-        opportunityScore: 85,
-        validationChecklist: [
-          "Survey 10 teachers or instructors in your niche about what materials they spend the most hours creating from scratch.",
-          "Assemble a 1-month sample pack of 3 high-impact activities or lesson worksheets.",
-          "Set up a Payhip membership page offering founding members a locked-in $9/month subscription rate.",
-        ],
-      },
     ];
   }
 
-  // Auto-Match across highest-converting marketplaces
+  // Auto-Match across all 5 marketplaces
   return [
     {
       id: `auto-${Date.now()}-1`,
@@ -547,4 +526,228 @@ export function generateClientIdeas({
       ],
     },
   ];
+}
+
+/**
+ * Main service function called from App.tsx:
+ * Calls @google/genai SDK directly from the browser using VITE_GEMINI_API_KEY if configured.
+ * If VITE_GEMINI_API_KEY is missing or fails, provides a clear notice and falls back to
+ * the high-converting platform engine so users never get blocked by 404 or missing env errors.
+ */
+export async function generateIdeas({
+  skills,
+  interests,
+  targetAudience,
+  targetPlatform,
+  preferredProductType = "Any Digital Product Type (AI Chooses Best Fit)",
+  budget = "$0 (Zero Budget / Organic Tools Only)",
+}: GenerateIdeasParams): Promise<GenerateIdeasResult> {
+  // Read key directly from Vite client environment variable
+  const apiKey = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
+
+  const isMissingKey = !apiKey || apiKey === "MY_GEMINI_API_KEY";
+
+  if (isMissingKey) {
+    // Generate verified platform-mapped ideas with clear informative fallback message
+    const fallbackIdeas = generateFallbackIdeas({
+      skills,
+      interests,
+      targetAudience,
+      targetPlatform,
+      preferredProductType,
+      budget,
+    });
+
+    return {
+      ideas: fallbackIdeas,
+      isLiveAi: false,
+      notice:
+        "Running in offline mode: VITE_GEMINI_API_KEY is not configured. Displaying verified high-converting concepts. Add VITE_GEMINI_API_KEY in your Vercel project settings to enable real-time Gemini AI queries.",
+    };
+  }
+
+  // Call @google/genai SDK directly from the browser
+  try {
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "digital-product-idea-finder-web",
+        },
+      },
+    });
+
+    const platformDirective = getPlatformDirective(targetPlatform, preferredProductType);
+
+    const prompt = `Analyze the creator profile and generate 3 to 4 tailored, high-converting digital product ideas strictly mapped to what actually sells best on each platform:
+
+Creator Profile:
+- Skills: ${skills.trim()}
+- Interests: ${interests.trim()}
+- Target Audience: ${targetAudience.trim()}
+- Target Platform: ${targetPlatform.trim()}
+- Preferred Product Type: ${preferredProductType.trim()}
+- Budget: ${budget.trim() || "$0 (Zero Budget / Organic Tools Only)"}
+
+${platformDirective}
+
+MANDATORY PLATFORM-SPECIFIC WINNING NICHES:
+- Etsy: Aesthetic & customizable Canva templates, printable planners, budget/finance Google Sheets & Excel trackers, wedding/event invites, and wall art.
+- Gumroad: Practical Notion templates/dashboards, indie developer resources, prompt packs, coding/design assets, and tactical mini-guides/eBooks.
+- Whop: Paid Discord/Telegram communities, trading/crypto/agency tools, SaaS access, fitness/lifestyle challenges, and exclusive membership hubs.
+- Stan Store: Creator-led mini-courses, 1:1 coaching/audit bookings, quick "link-in-bio" PDF playbooks, and social media growth kits.
+- Payhip: Educational courses, membership subscriptions, digital downloads for independent educators, and niche hobby patterns/guides.
+
+FOR EACH IDEA, YOU MUST PROVIDE A DEDICATED "winningFormula" OBJECT:
+- buyerMindset: The exact purchasing psychology and expectations of shoppers on that platform.
+- topSellerSecrets: What top sellers on that platform include to get high sales (e.g., "Etsy buyers love clean aesthetic previews and instant Canva links" or "Gumroad buyers prefer 'Pay What You Want' lead magnets paired with a $19 Pro version").
+- highConvertingAngle: A specific hook, unique bundle, or standout differentiator to beat the competition.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction:
+          "You are an elite digital product strategist and monetization expert. You strictly map user skills and interests to the proven top-selling formats for each specific platform: Etsy (Canva templates, printable planners, Sheets trackers), Gumroad (Notion systems, developer/design assets, prompt packs, playbooks), Whop (Paid Discord/Telegram communities, challenge vaults, software tools), Stan Store (creator-led mini courses, 1:1 audits, link-in-bio PDF playbooks), and Payhip (educational courses, independent educator bundles, hobby patterns). Always output strictly valid JSON matching the schema.",
+        temperature: 0.7,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            ideas: {
+              type: Type.ARRAY,
+              description:
+                "Between 3 and 4 digital product ideas strictly mapped to platform winning niches.",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: {
+                    type: Type.STRING,
+                    description: "Unique short ID like idea-1, idea-2",
+                  },
+                  productConcept: {
+                    type: Type.STRING,
+                    description:
+                      "Clear, catchy product title and a simple 1-2 sentence explanation of what it is.",
+                  },
+                  productFormat: {
+                    type: Type.STRING,
+                    description:
+                      "The concrete digital product format matching the platform's winning niche (e.g., Canva Template Kit, Notion Dashboard, Google Sheets Tracker, Paid Discord Hub & Challenge, Quick PDF Playbook).",
+                  },
+                  bestPlatform: {
+                    type: Type.STRING,
+                    description:
+                      "The exact matched marketplace (Etsy, Gumroad, Whop, Stan Store, or Payhip).",
+                  },
+                  platformDemandInsight: {
+                    type: Type.STRING,
+                    description:
+                      "1-2 sentences explaining WHY this format has proven high sales volume on this platform.",
+                  },
+                  winningFormula: {
+                    type: Type.OBJECT,
+                    description:
+                      "Platform winning formula explaining why this sells best on this platform.",
+                    properties: {
+                      buyerMindset: {
+                        type: Type.STRING,
+                        description:
+                          "The exact buyer mindset and psychology on this platform.",
+                      },
+                      topSellerSecrets: {
+                        type: Type.STRING,
+                        description:
+                          "What top sellers on this platform include to get high sales.",
+                      },
+                      highConvertingAngle: {
+                        type: Type.STRING,
+                        description:
+                          "A specific hook, unique bundle, or standout differentiator to beat competition.",
+                      },
+                    },
+                    required: [
+                      "buyerMindset",
+                      "topSellerSecrets",
+                      "highConvertingAngle",
+                    ],
+                  },
+                  targetCustomer: {
+                    type: Type.STRING,
+                    description: "Simple description of who will buy this.",
+                  },
+                  problemSolved: {
+                    type: Type.STRING,
+                    description:
+                      "What everyday frustration or problem this solves for the buyer.",
+                  },
+                  opportunityScore: {
+                    type: Type.INTEGER,
+                    description:
+                      "Preliminary opportunity score out of 100 (1-100).",
+                  },
+                  validationChecklist: {
+                    type: Type.ARRAY,
+                    description:
+                      "3 to 4 actionable, practical validation steps tailored to that product and platform.",
+                    items: {
+                      type: Type.STRING,
+                    },
+                  },
+                },
+                required: [
+                  "id",
+                  "productConcept",
+                  "productFormat",
+                  "bestPlatform",
+                  "platformDemandInsight",
+                  "winningFormula",
+                  "targetCustomer",
+                  "problemSolved",
+                  "opportunityScore",
+                  "validationChecklist",
+                ],
+              },
+            },
+          },
+          required: ["ideas"],
+        },
+      },
+    });
+
+    const rawText = response.text || "";
+    if (!rawText.trim()) {
+      throw new Error("Empty response received from Gemini.");
+    }
+
+    // Safely parse JSON stripping any markdown backticks
+    const parsed = parseCleanJson<{ ideas: ProductIdea[] }>(rawText);
+
+    if (Array.isArray(parsed.ideas) && parsed.ideas.length > 0) {
+      return {
+        ideas: parsed.ideas,
+        isLiveAi: true,
+      };
+    }
+
+    throw new Error("No structured product ideas found in AI response.");
+  } catch (error) {
+    console.warn("Direct Gemini call failed, loading high-converting fallback ideas:", error);
+    const fallbackIdeas = generateFallbackIdeas({
+      skills,
+      interests,
+      targetAudience,
+      targetPlatform,
+      preferredProductType,
+      budget,
+    });
+
+    const message = error instanceof Error ? error.message : "Network/API error";
+
+    return {
+      ideas: fallbackIdeas,
+      isLiveAi: false,
+      notice: `Gemini live call error: ${message}. Loaded verified high-converting concepts for ${targetPlatform}.`,
+    };
+  }
 }

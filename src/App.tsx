@@ -23,7 +23,7 @@ import {
   ChevronRight,
   ShieldCheck,
 } from "lucide-react";
-import { generateClientIdeas } from "./ideaGenerator";
+import { generateIdeas } from "./ideaGenerator";
 
 export interface PlatformWinningFormula {
   buyerMindset: string;
@@ -310,6 +310,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [checkedSteps, setCheckedSteps] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isLiveAi, setIsLiveAi] = useState<boolean>(false);
 
   const handleReset = () => {
     setSkills("");
@@ -319,6 +321,8 @@ export default function App() {
     setPreferredProductType(PRODUCT_TYPE_OPTIONS[0]);
     setBudget(BUDGET_OPTIONS[0]);
     setError(null);
+    setNotice(null);
+    setIsLiveAi(false);
   };
 
   const toggleStep = (ideaId: string, stepIndex: number) => {
@@ -359,12 +363,10 @@ ${idea.validationChecklist.map((step, i) => `${i + 1}. ${step}`).join("\n")}`;
 
     setIsLoading(true);
     setError(null);
+    setNotice(null);
 
     try {
-      // Simulate realistic 500ms matching delay for the smooth SaaS skeleton loader
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const generated = generateClientIdeas({
+      const result = await generateIdeas({
         skills,
         interests,
         targetAudience,
@@ -373,8 +375,12 @@ ${idea.validationChecklist.map((step, i) => `${i + 1}. ${step}`).join("\n")}`;
         budget,
       });
 
-      if (Array.isArray(generated) && generated.length > 0) {
-        setIdeas(generated);
+      if (Array.isArray(result.ideas) && result.ideas.length > 0) {
+        setIdeas(result.ideas);
+        setIsLiveAi(result.isLiveAi);
+        if (result.notice) {
+          setNotice(result.notice);
+        }
         setCheckedSteps({});
       } else {
         throw new Error("No ideas were returned. Please try adjusting your inputs.");
@@ -680,11 +686,16 @@ ${idea.validationChecklist.map((step, i) => `${i + 1}. ${step}`).join("\n")}`;
 
           {/* Right Column: 02. Tailored Product Concepts */}
           <section className="lg:col-span-7 space-y-6">
-            <div className="flex items-center justify-between pb-1">
-              <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-between pb-1 flex-wrap gap-2">
+              <div className="flex items-center gap-2.5 flex-wrap">
                 <h2 className="text-base font-bold text-slate-900 tracking-tight font-display">
                   02. Tailored Product Concepts
                 </h2>
+                {isLiveAi && (
+                  <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                    Gemini 2.5 Live
+                  </span>
+                )}
                 {targetPlatform !== "Auto-Match Best Platform" && (
                   <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                     Filtered: {targetPlatform}
@@ -695,6 +706,13 @@ ${idea.validationChecklist.map((step, i) => `${i + 1}. ${step}`).join("\n")}`;
                 {ideas.length} concepts
               </span>
             </div>
+
+            {notice && (
+              <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5 shadow-2xs leading-relaxed">
+                <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>{notice}</span>
+              </div>
+            )}
 
             {/* Loading Skeleton */}
             {isLoading && (
